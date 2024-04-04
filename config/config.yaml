@@ -1,6 +1,7 @@
 # distributed training
 nodes: 1
-gpus: 1 # I recommend always assigning 1 GPU to 1 node
+accelerator: "gpu"
+devices: 1 # I recommend always assigning 1 GPU to 1 node
 nr: 0 # machine nr. in node (0 -- nodes - 1)
 dataparallel: 0 # Use DataParallel instead of DistributedDataParallel
 workers: 8
@@ -8,16 +9,16 @@ dataset_dir: "./datasets"
 
 # train options
 seed: 42 # sacred handles automatic seeding when passed in the config
-batch_size: 128
+batch_size: 1024
 image_size: 224
 start_epoch: 0
-epochs: 100
+epochs: 2000
 dataset: "CIFAR10" # STL10
-pretrain: True 
+pretrain: True
 
 # model options
 resnet: "resnet18"
-projection_dim: 64 # "[...] to project the representation to a 128-dimensional latent space"
+projection_dim: 128 #64 # "[...] to project the representation to a 128-dimensional latent space"
 
 # loss options
 optimizer: "Adam" # or LARS (experimental)
@@ -26,9 +27,60 @@ temperature: 0.5 # see appendix B.7.: Optimal temperature under different batch 
 
 # reload options
 model_path: "save" # set to the directory containing `checkpoint_##.tar` 
-epoch_num: 100 # set to checkpoint number
+epoch_num: 10 # set to checkpoint number
 reload: False
 
 # logistic regression options
-logistic_batch_size: 256
-logistic_epochs: 500
+logistic_batch_size: 4096
+logistic_epochs: 200
+
+# 512 res net
+#  N Parcels: 100 - 10 epochs - AVG ACC: 0.509, Majority Vote AVG ACC: 0.539, ACC STD: 0.025, Majority Vote ACC STD: 0.026
+#  N Parcels: 1000 - 10 epochs - AVG ACC: 0.698, Majority Vote AVG ACC: 0.759, ACC STD: 0.005, Majority Vote ACC STD: 0.006
+#  N Parcels: 10000 - 10 epochs - AVG ACC: 0.785, Majority Vote AVG ACC: 0.855, ACC STD: 0.003, Majority Vote ACC STD: 0.002
+
+# 256 res net + 128 projection dim
+#  N Parcels: 100 - 10 epochs - AVG ACC: 0.506, Majority Vote AVG ACC: 0.541, ACC STD: 0.025, Majority Vote ACC STD: 0.027
+#  N Parcels: 1000 - 10 epochs - AVG ACC: 0.688, Majority Vote AVG ACC: 0.756, ACC STD: 0.004, Majority Vote ACC STD: 0.004
+#  N Parcels: 10000 - 10 epochs - AVG ACC: 0.777, Majority Vote AVG ACC: 0.847, ACC STD: 0.002, Majority Vote ACC STD: 0.002
+
+# 256 res net + 128 projection dim + MLP extra layer + 10 epochs
+#  N Parcels: 100 - 10 epochs - AVG ACC: 0.515, Majority Vote AVG ACC: 0.547, ACC STD: 0.025, Majority Vote ACC STD: 0.027
+#  N Parcels: 1000 - 10 epochs - AVG ACC: 0.684, Majority Vote AVG ACC: 0.743, ACC STD: 0.004, Majority Vote ACC STD: 0.005
+#  N Parcels: 10000 - 10 epochs - AVG ACC: 0.765, Majority Vote AVG ACC: 0.829, ACC STD: 0.002, Majority Vote ACC STD: 0.002
+
+# 256 res net + 128 projection dim + MLP extra layer + 20 epochs
+#  --------- N Parcels: 100 - 20 epochs - AVG ACC: 0.495, Majority Vote AVG ACC: 0.520, ACC STD: 0.024, Majority Vote ACC STD: 0.025
+#  --------- N Parcels: 1000 - 20 epochs - AVG ACC: 0.675, Majority Vote AVG ACC: 0.726, ACC STD: 0.005, Majority Vote ACC STD: 0.006
+#  --------- N Parcels: 10000 - 20 epochs - AVG ACC: 0.760, Majority Vote AVG ACC: 0.820, ACC STD: 0.003, Majority Vote ACC STD: 0.002
+
+# 256 res net + 128 projection dim + MLP extra layerwith BN and Bias + 10 epochs
+#  --------- N Parcels: 100 - 10 epochs - AVG ACC: 0.497, Majority Vote AVG ACC: 0.528, ACC STD: 0.025, Majority Vote ACC STD: 0.027
+#  --------- N Parcels: 1000 - 10 epochs - AVG ACC: 0.649, Majority Vote AVG ACC: 0.715, ACC STD: 0.005, Majority Vote ACC STD: 0.005
+#  --------- N Parcels: 10000 - 10 epochs - AVG ACC: 0.755, Majority Vote AVG ACC: 0.825, ACC STD: 0.002, Majority Vote ACC STD: 0.003
+
+# 256 res net + 128 projection dim + MLP, BN and Bias proper + 10 epochs
+#  N Parcels: 100 - 10 epochs - AVG ACC: 0.507, Majority Vote AVG ACC: 0.542, ACC STD: 0.024, Majority Vote ACC STD: 0.026
+#  N Parcels: 1000 - 10 epochs - AVG ACC: 0.690, Majority Vote AVG ACC: 0.759, ACC STD: 0.005, Majority Vote ACC STD: 0.005
+#  N Parcels: 10000 - 10 epochs - AVG ACC: 0.777, Majority Vote AVG ACC: 0.847, ACC STD: 0.003, Majority Vote ACC STD: 0.002
+
+# 256 res net + 128 projection dim + 2 extra convblock + 10 epochs
+#  N Parcels: 100 - 10 epochs - AVG ACC: 0.513, Majority Vote AVG ACC: 0.544, ACC STD: 0.024, Majority Vote ACC STD: 0.026
+#  N Parcels: 1000 - 10 epochs - AVG ACC: 0.690, Majority Vote AVG ACC: 0.753, ACC STD: 0.004, Majority Vote ACC STD: 0.005
+#  N Parcels: 10000 - 10 epochs - AVG ACC: 0.779, Majority Vote AVG ACC: 0.846, ACC STD: 0.003, Majority Vote ACC STD: 0.002
+
+# 256 res net + 128 projection dim + 2 extra convblock + 20 epochs
+# 2024-04-04 15:26:13.509 | RESULT   | francecrops.Experiment:run_supervised:116 - N Parcels: 100 - SimCLR 13 Bands - 20 epochs - LogisticRegression() - AVG ACC: 0.489, Majority Vote AVG ACC: 0.513, ACC STD: 0.023, Majority Vote ACC STD: 0.024
+# 2024-04-04 15:27:01.778 | RESULT   | francecrops.Experiment:run_supervised:116 - N Parcels: 1000 - SimCLR 13 Bands - 20 epochs - LogisticRegression() - AVG ACC: 0.685, Majority Vote AVG ACC: 0.741, ACC STD: 0.004, Majority Vote ACC STD: 0.005
+# 2024-04-04 15:28:42.794 | RESULT   | francecrops.Experiment:run_supervised:116 - N Parcels: 10000 - SimCLR 13 Bands - 20 epochs - LogisticRegression() - AVG ACC: 0.780, Majority Vote AVG ACC: 0.843, ACC STD: 0.003, Majority Vote ACC STD: 0.002
+
+
+# 256 res net + 128 projection dim + 20 epochs + 128 batch_size
+# 2024-04-04 15:44:29.310 | RESULT   | francecrops.Experiment:run_supervised:116 - N Parcels: 100 - SimCLR 13 Bands - 20 epochs - LogisticRegression() - AVG ACC: 0.478, Majority Vote AVG ACC: 0.503, ACC STD: 0.022, Majority Vote ACC STD: 0.023
+# 2024-04-04 15:45:16.800 | RESULT   | francecrops.Experiment:run_supervised:116 - N Parcels: 1000 - SimCLR 13 Bands - 20 epochs - LogisticRegression() - AVG ACC: 0.678, Majority Vote AVG ACC: 0.737, ACC STD: 0.005, Majority Vote ACC STD: 0.005
+
+# 256 res net + 128 projection dim + 10 epochs + 128 batch_size
+
+
+
+# 256 res net + 128 projection dim + 10 epochs + 512 batch_size

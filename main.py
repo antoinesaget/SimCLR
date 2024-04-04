@@ -1,25 +1,25 @@
+# %%
+import argparse
 import os
+from types import SimpleNamespace
+
 import numpy as np
 import torch
-import torchvision
-import argparse
-
-# distributed training
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from francecrops.Dataset import Dataset
 from torch.nn.parallel import DataParallel
 from torch.nn.parallel import DistributedDataParallel as DDP
-
-# TensorBoard
 from torch.utils.tensorboard import SummaryWriter
-
-# SimCLR
-from simclr import SimCLR
-from simclr.modules import NT_Xent, get_resnet
-from simclr.modules.transformations import TransformsSimCLR
-from simclr.modules.sync_batchnorm import convert_model
+from torchinfo import summary
+from tsai.models.ResNet import ResNet  # noqa: F401
 
 from model import load_optimizer, save_model
+from simclr import SimCLR
+from simclr.modules import NT_Xent
+from simclr.modules.sync_batchnorm import convert_model
+from simclr.modules.transformations import TransformsSimCLR
+from tfencoder import TFEncoder
 from utils import yaml_config_hook
 
 
@@ -42,8 +42,8 @@ def train(args, train_loader, model, criterion, optimizer, writer):
             loss = loss.data.clone()
             dist.all_reduce(loss.div_(dist.get_world_size()))
 
-        if args.nr == 0 and step % 50 == 0:
-            print(f"Step [{step}/{len(train_loader)}]\t Loss: {loss.item()}")
+        # if args.nr == 0 and step % 50 == 0:
+            # print(f"Step [{step}/{len(train_loader)}]\t Loss: {loss.item()}")
 
         if args.nr == 0:
             writer.add_scalar("Loss/train_epoch", loss.item(), args.global_step)
@@ -53,8 +53,32 @@ def train(args, train_loader, model, criterion, optimizer, writer):
     return loss_epoch
 
 
+class Francecrops(torch.utils.data.Dataset):
+    def __init__(self, transform=None):
+        dataset = Dataset.v0_7_40k(
+            flatten=False,
+            raw=False,
+            # bands=["NDVI", "B3", "B4", "B8"],
+        )
+        self.data = dataset.x_train.reshape(
+            -1, 100, dataset.x_train.shape[1], dataset.x_train.shape[2]
+        ).transpose(0, 1, 3, 2)
+        self.transform = transform
+
+        print(self.data.shape)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        x = self.data[idx]
+        if self.transform:
+            x = self.transform(x)
+        return x, 0
+
+
 def main(gpu, args):
-    rank = args.nr * args.gpus + gpu
+    rank = args.nr * args.devices + gpu
 
     if args.nodes > 1:
         dist.init_process_group("nccl", rank=rank, world_size=args.world_size)
@@ -63,40 +87,29 @@ def main(gpu, args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    if args.dataset == "STL10":
-        train_dataset = torchvision.datasets.STL10(
-            args.dataset_dir,
-            split="unlabeled",
-            download=True,
-            transform=TransformsSimCLR(size=args.image_size),
-        )
-    elif args.dataset == "CIFAR10":
-        train_dataset = torchvision.datasets.CIFAR10(
-            args.dataset_dir,
-            download=True,
-            transform=TransformsSimCLR(size=args.image_size),
-        )
-    else:
-        raise NotImplementedError
-
-    if args.nodes > 1:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_dataset, num_replicas=args.world_size, rank=rank, shuffle=True
-        )
-    else:
-        train_sampler = None
-
+    my_ds = Francecrops(transform=TransformsSimCLR())
     train_loader = torch.utils.data.DataLoader(
-        train_dataset,
+        my_ds,
         batch_size=args.batch_size,
-        shuffle=(train_sampler is None),
+        shuffle=True,
         drop_last=True,
         num_workers=args.workers,
-        sampler=train_sampler,
     )
 
-    # initialize ResNet
-    encoder = get_resnet(args.resnet, pretrained=False)
+    # args2 = SimpleNamespace(
+    #     timeseries_length=60,
+    #     timeseries_n_channels=13,
+    #     window_length=6,
+    #     projection_depth=512,
+    #     n_attention_heads=4,
+    #     dropout=0.1,
+    #     n_encoder_layers=4,
+    #     n_classes=20,
+    # )
+    # encoder = TFEncoder(args2)
+    encoder = ResNet(13, 10)
+
+    summary(encoder, input_size=(args.batch_size, 13, 60))
     n_features = encoder.fc.in_features  # get dimensions of fc layer
 
     # initialize model
@@ -130,9 +143,6 @@ def main(gpu, args):
     args.global_step = 0
     args.current_epoch = 0
     for epoch in range(args.start_epoch, args.epochs):
-        if train_sampler is not None:
-            train_sampler.set_epoch(epoch)
-        
         lr = optimizer.param_groups[0]["lr"]
         loss_epoch = train(args, train_loader, model, criterion, optimizer, writer)
 
@@ -150,12 +160,10 @@ def main(gpu, args):
             )
             args.current_epoch += 1
 
-    ## end training
     save_model(args, model, optimizer)
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="SimCLR")
     config = yaml_config_hook("./config/config.yaml")
     for k, v in config.items():
@@ -172,7 +180,7 @@ if __name__ == "__main__":
 
     args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     args.num_gpus = torch.cuda.device_count()
-    args.world_size = args.gpus * args.nodes
+    args.world_size = args.devices * args.nodes
 
     if args.nodes > 1:
         print(
@@ -181,3 +189,5 @@ if __name__ == "__main__":
         mp.spawn(main, args=(args,), nprocs=args.gpus, join=True)
     else:
         main(0, args)
+
+# %%

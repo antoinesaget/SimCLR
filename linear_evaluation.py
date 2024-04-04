@@ -1,14 +1,17 @@
-import os
 import argparse
-import torch
-import torchvision
-import torchvision.transforms as transforms
+import os
+from types import SimpleNamespace
+
 import numpy as np
+import torch
+from cuml.linear_model import LogisticRegression
+from francecrops.Dataset import Dataset
+from francecrops.Experiment import Experiment
+from tsai.models.ResNet import ResNet  # noqa: F401
 
+# from tsai.models.ResNet import ResNet  # noqa: F401
 from simclr import SimCLR
-from simclr.modules import LogisticRegression, get_resnet
-from simclr.modules.transformations import TransformsSimCLR
-
+from tfencoder import TFEncoder
 from utils import yaml_config_hook
 
 
@@ -25,14 +28,15 @@ def inference(loader, simclr_model, device):
         h = h.detach()
 
         feature_vector.extend(h.cpu().detach().numpy())
-        labels_vector.extend(y.numpy())
+        labels_vector.extend(y.cpu().detach().numpy())
 
         if step % 20 == 0:
-            print(f"Step [{step}/{len(loader)}]\t Computing features...")
+            print(f'Step [{step}/{len(loader)}]\t Computing features...')
 
     feature_vector = np.array(feature_vector)
     labels_vector = np.array(labels_vector)
-    print("Features shape {}".format(feature_vector.shape))
+    print('Features shape {}'.format(feature_vector.shape))
+    print('Labels shape {}'.format(labels_vector.shape))
     return feature_vector, labels_vector
 
 
@@ -41,167 +45,99 @@ def get_features(simclr_model, train_loader, test_loader, device):
     test_X, test_y = inference(test_loader, simclr_model, device)
     return train_X, train_y, test_X, test_y
 
+class Francecrops(torch.utils.data.Dataset):
+    def __init__(self, transform=None, test=False, train=False):
+        self.transform = None
+        dataset = Dataset.v0_7_40k(
+            flatten=False,
+            raw=False,
+            # bands=["NDVI", "B3", "B4", "B8"],
+        )
+        if train:
+            self.data = dataset.x_train  # [: 280 * 100]
+            self.targets = dataset.y_train  # [: 280 * 100]
+        if test:
+            self.data = dataset.x_test
+            self.targets = dataset.y_test
+        self.data = self.data.transpose(0, 2, 1)
+        self.n_classes = len(np.unique(self.targets))
+        print(self.data.shape, self.targets.shape)
 
-def create_data_loaders_from_arrays(X_train, y_train, X_test, y_test, batch_size):
-    train = torch.utils.data.TensorDataset(
-        torch.from_numpy(X_train), torch.from_numpy(y_train)
-    )
-    train_loader = torch.utils.data.DataLoader(
-        train, batch_size=batch_size, shuffle=False
-    )
+    def __len__(self):
+        return len(self.data)
 
-    test = torch.utils.data.TensorDataset(
-        torch.from_numpy(X_test), torch.from_numpy(y_test)
-    )
-    test_loader = torch.utils.data.DataLoader(
-        test, batch_size=batch_size, shuffle=False
-    )
-    return train_loader, test_loader
-
-
-def train(args, loader, simclr_model, model, criterion, optimizer):
-    loss_epoch = 0
-    accuracy_epoch = 0
-    for step, (x, y) in enumerate(loader):
-        optimizer.zero_grad()
-
-        x = x.to(args.device)
-        y = y.to(args.device)
-
-        output = model(x)
-        loss = criterion(output, y)
-
-        predicted = output.argmax(1)
-        acc = (predicted == y).sum().item() / y.size(0)
-        accuracy_epoch += acc
-
-        loss.backward()
-        optimizer.step()
-
-        loss_epoch += loss.item()
-        # if step % 100 == 0:
-        #     print(
-        #         f"Step [{step}/{len(loader)}]\t Loss: {loss.item()}\t Accuracy: {acc}"
-        #     )
-
-    return loss_epoch, accuracy_epoch
+    def __getitem__(self, idx):
+        x = self.data[idx]
+        y = self.targets[idx]
+        return x, y
 
 
-def test(args, loader, simclr_model, model, criterion, optimizer):
-    loss_epoch = 0
-    accuracy_epoch = 0
-    model.eval()
-    for step, (x, y) in enumerate(loader):
-        model.zero_grad()
-
-        x = x.to(args.device)
-        y = y.to(args.device)
-
-        output = model(x)
-        loss = criterion(output, y)
-
-        predicted = output.argmax(1)
-        acc = (predicted == y).sum().item() / y.size(0)
-        accuracy_epoch += acc
-
-        loss_epoch += loss.item()
-
-    return loss_epoch, accuracy_epoch
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="SimCLR")
-    config = yaml_config_hook("./config/config.yaml")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='SimCLR')
+    config = yaml_config_hook('./config/config.yaml')
     for k, v in config.items():
-        parser.add_argument(f"--{k}", default=v, type=type(v))
+        parser.add_argument(f'--{k}', default=v, type=type(v))
 
     args = parser.parse_args()
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device {args.device}')
 
-    if args.dataset == "STL10":
-        train_dataset = torchvision.datasets.STL10(
-            args.dataset_dir,
-            split="train",
-            download=True,
-            transform=TransformsSimCLR(size=args.image_size).test_transform,
-        )
-        test_dataset = torchvision.datasets.STL10(
-            args.dataset_dir,
-            split="test",
-            download=True,
-            transform=TransformsSimCLR(size=args.image_size).test_transform,
-        )
-    elif args.dataset == "CIFAR10":
-        train_dataset = torchvision.datasets.CIFAR10(
-            args.dataset_dir,
-            train=True,
-            download=True,
-            transform=TransformsSimCLR(size=args.image_size).test_transform,
-        )
-        test_dataset = torchvision.datasets.CIFAR10(
-            args.dataset_dir,
-            train=False,
-            download=True,
-            transform=TransformsSimCLR(size=args.image_size).test_transform,
-        )
-    else:
-        raise NotImplementedError
-
+    train_ds = Francecrops(train=True)
     train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=args.logistic_batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.workers,
-    )
-
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
+        train_ds,
         batch_size=args.logistic_batch_size,
         shuffle=False,
-        drop_last=True,
+        drop_last=False,
         num_workers=args.workers,
     )
 
-    encoder = get_resnet(args.resnet, pretrained=False)
+    test_ds = Francecrops(test=True)
+    test_loader = torch.utils.data.DataLoader(
+        test_ds,
+        batch_size=args.logistic_batch_size,
+        shuffle=False,
+        drop_last=False,
+        num_workers=args.workers,
+    )
+
+    # args2 = SimpleNamespace(
+    #     timeseries_length=60,
+    #     timeseries_n_channels=13,
+    #     window_length=6,
+    #     projection_depth=512,
+    #     n_attention_heads=4,
+    #     dropout=0.1,
+    #     n_encoder_layers=4,
+    #     n_classes=20,
+    # )
+    # encoder = TFEncoder(args2)
+    encoder = ResNet(train_ds.data.shape[1], 10)
+    encoder.training = False
     n_features = encoder.fc.in_features  # get dimensions of fc layer
 
     # load pre-trained model from checkpoint
     simclr_model = SimCLR(encoder, args.projection_dim, n_features)
-    model_fp = os.path.join(args.model_path, "checkpoint_{}.tar".format(args.epoch_num))
+    model_fp = os.path.join(args.model_path, 'checkpoint_{}.tar'.format(args.epoch_num))
     simclr_model.load_state_dict(torch.load(model_fp, map_location=args.device.type))
     simclr_model = simclr_model.to(args.device)
     simclr_model.eval()
 
-    ## Logistic Regression
-    n_classes = 10  # CIFAR-10 / STL-10
-    model = LogisticRegression(simclr_model.n_features, n_classes)
-    model = model.to(args.device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
-    criterion = torch.nn.CrossEntropyLoss()
-
-    print("### Creating features from pre-trained context model ###")
+    print('### Creating features from pre-trained context model ###')
     (train_X, train_y, test_X, test_y) = get_features(
         simclr_model, train_loader, test_loader, args.device
     )
 
-    arr_train_loader, arr_test_loader = create_data_loaders_from_arrays(
-        train_X, train_y, test_X, test_y, args.logistic_batch_size
-    )
+    print(f'Shape of train_X: {train_X.shape}, train_y: {train_y.shape}')
+    print(f'Shape of test_X: {test_X.shape}, test_y: {test_y.shape}')
 
-    for epoch in range(args.logistic_epochs):
-        loss_epoch, accuracy_epoch = train(
-            args, arr_train_loader, simclr_model, model, criterion, optimizer
-        )
-        print(
-            f"Epoch [{epoch}/{args.logistic_epochs}]\t Loss: {loss_epoch / len(arr_train_loader)}\t Accuracy: {accuracy_epoch / len(arr_train_loader)}"
-        )
-
-    # final testing
-    loss_epoch, accuracy_epoch = test(
-        args, arr_test_loader, simclr_model, model, criterion, optimizer
-    )
-    print(
-        f"[FINAL]\t Loss: {loss_epoch / len(arr_test_loader)}\t Accuracy: {accuracy_epoch / len(arr_test_loader)}"
-    )
+    simclr_rep_dataset = Dataset(train_X, train_y, test_X, test_y)
+    simclr_rep_dataset.to_parquet('df_v0.7_40k_rep_simclr_all_bands_10_extralayers_1024')
+    # model = LogisticRegression(max_iter=10000, tol=1e-3)
+    # n_trains = np.array([100, 1000, 10000]) * 100
+    # experiment = Experiment(n_trains, [model], [])
+    # experiment.set_representation(
+    #     simclr_rep_dataset, f"SimCLR 13 Bands - {args.epoch_num} epochs"
+    # )
+    # experiment.runExperiment()
+    # res = experiment.getResults()
+    # print(res)
