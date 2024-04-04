@@ -1,7 +1,10 @@
 name: simclr
 channels:
   - pytorch
+  - nvidia
 dependencies:
-  - pytorch
+  - pytorch-cuda
   - torchvision
   - pyyaml
+  - pytorch-lightning=1.9.5
+  - tensorboard
