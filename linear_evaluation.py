@@ -9,7 +9,6 @@ from francecrops.Dataset import Dataset
 from francecrops.Experiment import Experiment
 from tsai.models.ResNet import ResNet  # noqa: F401
 
-# from tsai.models.ResNet import ResNet  # noqa: F401
 from simclr import SimCLR
 from tfencoder import TFEncoder
 from utils import yaml_config_hook
