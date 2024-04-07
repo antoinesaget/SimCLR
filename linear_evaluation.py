@@ -45,14 +45,11 @@ def get_features(simclr_model, train_loader, test_loader, device):
     test_X, test_y = inference(test_loader, simclr_model, device)
     return train_X, train_y, test_X, test_y
 
+
 class Francecrops(torch.utils.data.Dataset):
     def __init__(self, transform=None, test=False, train=False):
         self.transform = None
-        dataset = Dataset.v0_7_40k(
-            flatten=False,
-            raw=False,
-            # bands=["NDVI", "B3", "B4", "B8"],
-        )
+        dataset = Dataset.v0_7_40k_13_preprocessed_normalized_cached(flatten=False)
         if train:
             self.data = dataset.x_train  # [: 280 * 100]
             self.targets = dataset.y_train  # [: 280 * 100]
