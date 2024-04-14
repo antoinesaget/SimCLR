@@ -86,12 +86,12 @@ class TFEncoder(nn.Module):
         # print(f"x.shape: {x.shape}")
         x += self.positional_encoder(x)
 
-        # if self.training:
-        #     index = np.arange(x.shape[1])
-        #     random.shuffle(index)
-        #     n_kept = random.randint(3, 6)
-        #     mask = index[:n_kept]
-        #     x = x[:, mask, :]
+        if self.training:
+            index = np.arange(x.shape[1])
+            random.shuffle(index)
+            n_kept = random.randint(4, 10)
+            mask = index[:n_kept]
+            x = x[:, mask, :]
 
         # print(f"x.shape: {x.shape}")
         x = self.encoder(x)

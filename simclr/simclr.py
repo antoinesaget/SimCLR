@@ -13,7 +13,7 @@ class SimCLR(nn.Module):
 
         self.encoder = encoder
         self.n_features = n_features
-
+        self.finetune = False
         # Replace the fc layer with an Identity function
         self.encoder.fc = Identity()
 
@@ -36,6 +36,8 @@ class SimCLR(nn.Module):
     def forward(self, x_i, x_j):
         # h_i = self.add_on(self.encoder(x_i))
         h_i = self.encoder(x_i)
+        if self.finetune:
+            return h_i
         # h_j = self.add_on(self.encoder(x_j))
         h_j = self.encoder(x_j)
 

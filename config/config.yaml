@@ -27,8 +27,13 @@ temperature: 0.5 # see appendix B.7.: Optimal temperature under different batch 
 
 # reload options
 model_path: "save" # set to the directory containing `checkpoint_##.tar` 
-epoch_num: 10 # set to checkpoint number
+epoch_num: 30 # set to checkpoint number
 reload: False
+
+# linear evaluation options
+linear_evaluation_batch_size: 4096
+linear_evaluation: True
+save_rep: False
 
 # 512 res net
 #  N Parcels: 100 - 10 epochs - AVG ACC: 0.509, Majority Vote AVG ACC: 0.539, ACC STD: 0.025, Majority Vote ACC STD: 0.026
@@ -80,3 +85,12 @@ reload: False
 
 
 # 256 res net + 128 projection dim + 10 epochs + 512 batch_size
+
+# 512 + 128 + 2 extra convblock + 10 epochs
+# 
+
+# 64 res net + 128 projection dim + 30 epochs
+#                 Representation                 Model  N Parcels       Acc  Majority Vote Acc   Acc STD  Majority Vote Acc STD
+# 0  SimCLR 13 Bands - 30 epochs  LogisticRegression()        100  0.488436           0.527157  0.024499               0.026896
+# 1  SimCLR 13 Bands - 30 epochs  LogisticRegression()       1000  0.664556           0.738160  0.003694               0.004410
+# 2  SimCLR 13 Bands - 30 epochs  LogisticRegression()      10000  0.742593           0.813990  0.001146               0.001555

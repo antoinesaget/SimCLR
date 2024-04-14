@@ -86,7 +86,9 @@ def get_features(simclr_model, train_loader, test_loader):
     return train_X, train_y, test_X, test_y
 
 
-def evaluate(train_finetune_loader, validation_finetune_loader, validation_contrast_loader, model, criterion):
+def evaluate(
+    train_finetune_loader, validation_finetune_loader, validation_contrast_loader, model, criterion
+):
     loss = 0
     for _, ((x_i, x_j), _) in enumerate(validation_contrast_loader):
         x_i = x_i.cuda(non_blocking=True)
@@ -101,7 +103,7 @@ def evaluate(train_finetune_loader, validation_finetune_loader, validation_contr
     experiment = SingleExperiment(n_repetition=10, n_parcels=200, model=lr_model, dataset=ds_rep)
     acc, majority_vote_acc = experiment.run()
 
-    return acc, majority_vote_acc, loss/len(validation_contrast_loader)
+    return acc, majority_vote_acc, loss / len(validation_contrast_loader)
 
 
 class Francecrops(torch.utils.data.Dataset):
@@ -180,7 +182,7 @@ def main(gpu, args):
         num_workers=args.workers,
     )
 
-    trazin_finetune_loader = torch.utils.data.DataLoader(
+    train_finetune_loader = torch.utils.data.DataLoader(
         Francecrops(n_parcels=2000, train=True, finetune=True),
         batch_size=args.batch_size,
         shuffle=False,
@@ -204,14 +206,21 @@ def main(gpu, args):
         num_workers=args.workers,
     )
 
+
+    
+    # 18-52-55
+    # 8 - 8 - 512
+    # 8 - 8 - 1024
+    # 4 - 4 - 512 - 6 
+    # 4 - 4 - 256 - 10
     # args2 = SimpleNamespace(
     #     timeseries_length=60,
     #     timeseries_n_channels=13,
     #     window_length=6,
-    #     projection_depth=512,
-    #     n_attention_heads=4,
+    #     projection_depth=1024,
+    #     n_attention_heads=8,
     #     dropout=0.1,
-    #     n_encoder_layers=4,
+    #     n_encoder_layers=8,
     #     n_classes=20,
     # )
     # encoder = TFEncoder(args2)
@@ -252,10 +261,14 @@ def main(gpu, args):
         lr = optimizer.param_groups[0]['lr']
         loss_epoch = train(args, train_contrast_loader, model, criterion, optimizer, writer)
 
-        if epoch % 5 == 0:
+        if epoch % 10 == 0:
             model.eval()
             val_acc, val_majority_vote_acc, validation_loss = evaluate(
-                trazin_finetune_loader, validation_finetune_loader, validation_contrast_loader, model, criterion
+                train_finetune_loader,
+                validation_finetune_loader,
+                validation_contrast_loader,
+                model,
+                criterion,
             )
             model.train()
             writer.add_scalar('Accuracy/validation', val_acc, epoch)
